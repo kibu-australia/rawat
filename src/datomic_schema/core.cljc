@@ -1,6 +1,7 @@
 (ns datomic-schema.core
   (:require [schema.core :as s]
-            [datomic.api :as d])
+            [datomic.api :as d]
+            [clojure.walk :as walk])
   (:import java.util.Date
            java.net.URI
            java.math.BigDecimal
@@ -35,7 +36,7 @@
        java.util.UUID {:db/valueType :db.type/uuid}
        java.net.URI {:db/valueType :db.type/uri}
        ;; else, cannot handle
-       (throw (Exception. (str "Don't know how to create schema for " x))))))
+       (throw (Exception. (str "Don't know how to create schema for " (pr-str x)))))))
 
 #?(:clj
    (extend-protocol IDatomicSchema
@@ -80,10 +81,14 @@
                                  :db/cardinality :db.cardinality/one}
                   attrs (get-attrs v)]
               (if (sequential? attrs) ;; enum
-                (if (= :db.cardinality/many (:db/cardinality (first attrs)))
-                  (conj (rest attrs) (merge default-attrs (first attrs))) ;; has-many enum
-                  (conj attrs (assoc default-attrs :db/valueType :db.type/ref))) ;; has-one enum
-                [(merge default-attrs attrs)])))))
+                (if (= :db.cardinality/many (:db/cardinality (last attrs)))
+                  (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
+                  (conj attrs (assoc default-attrs :db/valueType :db.type/ref)))
+                (if (sequential? v)
+                  (if (instance? clojure.lang.PersistentArrayMap (first v))
+                    (flatten [(merge default-attrs attrs) (into [] build-schema (first v))])
+                    [(merge default-attrs attrs)])
+                  [(merge default-attrs attrs)]))))))
 
 (defn validate-txes [txes]
   (loop [txes txes next-txes []]
