@@ -9,6 +9,14 @@
            java.util.UUID
            schema.core.Schema))
 
+(s/defschema DatomicMetaAttrMap
+  {(s/optional-key :db/doc) s/Str
+   (s/optional-key :db/unique) (s/enum :db.unique/value :db.unique/identity)
+   (s/optional-key :db/index) s/Bool
+   (s/optional-key :db/fulltext) s/Bool
+   (s/optional-key :db/isComponent) s/Bool
+   (s/optional-key :db/noHistory) s/Bool})
+
 (defprotocol IDatomicSchema
   (get-attrs [this]))
 
@@ -20,6 +28,7 @@
   (get-attrs [_] (merge attrs (get-attrs t))))
 
 (defn datomic-meta [attrs t]
+  (s/validate DatomicMetaAttrMap attrs)
   (DatomicMeta. attrs t))
 
 #?(:clj
