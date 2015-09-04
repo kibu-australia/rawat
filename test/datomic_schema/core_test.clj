@@ -8,7 +8,7 @@
   {:some/ref [{:some/nested-ref s/Bool}]
    :some/string s/Str
    :some/many-date [s/Inst]
-   :some/some-keyword s/Keyword
+   :some/keyword s/Keyword
    :some/full-text-string (datomic-meta {:db/fulltext true} s/Str)
    :some/enum (s/enum :enum/first :enum/second :enum/third)
    :some/many-enum [(s/enum :enum/fourth :enum/fifth)]
