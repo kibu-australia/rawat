@@ -2,13 +2,13 @@
   (:require [schema.core :as s]
             [datomic.api :as d]
             [clojure.walk :as walk]
-            [clojure.data :refer [diff]])
+            [clojure.data :refer [diff]]
+            [clojure.core.match :refer [match]])
   (:import java.util.Date
            java.net.URI
            java.math.BigDecimal
            java.math.BigInteger
-           java.util.UUID
-           schema.core.Schema))
+           java.util.UUID))
 
 (s/defschema DatomicMetaAttrMap
   {(s/optional-key :db/doc) s/Str
@@ -28,8 +28,8 @@
   IDatomicSchema
   (get-attrs [_] (merge attrs (get-attrs t))))
 
-(defn datomic-meta [attrs t]
-  (s/validate DatomicMetaAttrMap attrs)
+(s/defn ^:always-validate datomic-meta :- DatomicMeta
+  [attrs :- DatomicMetaAttrMap t :- s/Any]
   (DatomicMeta. attrs t))
 
 #?(:clj
@@ -171,30 +171,47 @@
 
 ;; Database diffing
 
-(def possible-alterations
-  {[:db/cardinality :db.cardinality/one] #{[:db/cardinality :db.cardinality/many]}
-   [:db/cardinality :db.cardinality/many] #{[:db/cardinality :db.cardinality/one]}
-   [:db/isComponent true] #{[:db/isComponent false] [:db/isComponent nil]}
-   [:db/isComponent false] #{[:db/isComponent true]}
-   [:db/isComponent nil] #{[:db/isComponent true]}
-   [:db/noHistory true] #{[:db/noHistory false] [:db/noHistory nil]}
-   [:db/noHistory false] #{[:db/noHistory true]}
-   [:db/noHistory nil] #{[:db/noHistory true]}})
+;; See "Altering Schema Attributes" - http://docs.datomic.com/schema.html
+(defn possible-alteration? [from to]
+  (match [from to]
+   [{:db/cardinality :db.cardinality/one} {:db/cardinality :db.cardinality/many}] true
+   [{:db/cardinality :db.cardinality/many} {:db/cardinality :db.cardinality/one}] true
+   [{:db/isComponent true} {:db/isComponent false}] true
+   [{:db/isComponent true} {}] true
+   [{:db/isComponent false} {:db/isComponent true}] true
+   [{} {:db/isComponent true}] true
+   [{:db/noHistory true} {:db/noHistory false}] true
+   [{:db/noHistory true} {}] true
+   [{:db/noHistory false} {:db/noHistory true}] true
+   [{} {:db/noHistory true}] true
+   [{:db/index true} {:db/index false}] true
+   [{:db/index true} {}] true
+   [{:db/index true} {:db/unique _}] true
+   [{:db/index false} {:db/unique _}] true
+   [{} {:db/unique _}] true
+   [{:db/index true :db/unique _} {}] true
+   [{:db/unique :db.unique/identity} {:db/unique :db.unique/value}] true
+   [{:db/unique :db.unique/value} {:db/unique :db.unique/identity}] true
+   :else false))
 
 (def alterations
-  [:db/isComponent :db/cardinality :db/noHistory :db/index :db/unique])
+  [[:db/isComponent] [:db/cardinality] [:db/noHistory] [:db/index :db/unique] [:db/unique]])
 
 (defn possible-alterations? [from to]
-  (let [possible-alteration?
-        (fn [alteration]
-          (let [to-value (get to alteration)
-                from-value (get from alteration)]
-            (when (or (some? from-value) (some? to-value))
-              [[from to]
-               (some? (some #{[alteration to-value]} (get possible-alterations [alteration from-value])))])))]
-    (into {} (comp (filter identity) (map possible-alteration?)) alterations)))
+  (into {}
+   (for [alteration alterations
+         :let [from-value (select-keys from alteration)
+               to-value (select-keys to alteration)]
+         :when (or (not (empty? from-value)) (not (empty? to-value)))]
+     [[from-value to-value] (possible-alteration? from-value to-value)])))
 
-(defn db-diff [conn schemas]
+(defn db-diff
+  "Returns the differnce between schemas and database
+
+  Returns a map containing:
+    * :diff - a transaction
+    * :alterations - a map of any schema alterations each key being :db/ident "
+  [conn schemas]
   (let [txes (schemas->tx schemas)
         db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
     (loop [txes txes next-txes [] alterations {}]
@@ -204,7 +221,8 @@
           (if (nil? db-attr)
             (recur (rest txes) (conj next-txes tx) alterations)
             (if (not= db-attr attr)
-              (let [[from to _] (diff db-attr attr)]
-                (recur (rest txes) next-txes (assoc alterations (:db/ident tx) (possible-alterations? from to))))
+              (let [[from to _] (diff db-attr attr)
+                    next-alterations (assoc alterations (:db/ident tx) (possible-alterations? from to))]
+                (recur (rest txes) next-txes next-alterations))
               (recur (rest txes) next-txes alterations))))
         {:diff next-txes :alterations alterations}))))
