@@ -15,7 +15,7 @@
    (s/optional-key :some/optional-recursive-key) (s/recursive #'MockSchema)})
 
 (fact
- (into [] build-schema MockSchema) =>
+ (into [] build-schema-tf MockSchema) =>
  (just [{:db/ident :some/ref
          :db/valueType :db.type/ref
          :db/cardinality :db.cardinality/many}
@@ -50,3 +50,39 @@
          :db/valueType :db.type/ref
          :db/cardinality :db.cardinality/one}]
        :in-any-order))
+
+(facts "about validate-txes"
+ (fact (validate-txes (into [] build-schema-tf MockSchema)) =>
+       (into [] build-schema-tf MockSchema))
+
+ ;; Conflicting ident
+ (fact (validate-txes (conj (into [] build-schema-tf MockSchema)
+                            {:db/ident :some/many-enum
+                             :db/cardinality :db.cardinality/one
+                             :db/valueType :db.type/string}))
+       => throws Exception)
+
+ ;; Duplicate ident
+ (validate-txes (conj (into [] build-schema-tf MockSchema)
+                      {:db/ident :some/many-enum
+                       :db/cardinality :db.cardinality/many
+                       :db/valueType :db.type/ref}))
+ => (into [] build-schema-tf MockSchema))
+
+(d/create-database "datomic:mem://foo5")
+(def conn (d/connect "datomic:mem://foo5"))
+
+(schemas->tx MockSchema)
+@(d/transact conn (schemas->tx MockSchema))
+
+(conforms? conn [MockSchema {:not-in-database s/Bool}]) ;=> false
+
+(fact
+ @(d/transact conn (schemas->tx MockSchema)) => truthy
+ (conforms? conn MockSchema) => true
+ (conforms? conn [MockSchema {:not-in-database s/Bool}]) => false
+ @(d/transact conn [{:db/id :some/many-enum                ;; Altering schema from
+                     :db/cardinality :db.cardinality/one   ;; cardinality of many
+                     :db.alter/_attribute :db.part/db}])   ;; to one should mean schemas no longer conform!
+ => truthy
+ (conforms? conn MockSchema) => false)

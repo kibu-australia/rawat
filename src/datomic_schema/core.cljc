@@ -1,7 +1,8 @@
 (ns datomic-schema.core
   (:require [schema.core :as s]
             [datomic.api :as d]
-            [clojure.walk :as walk])
+            [clojure.walk :as walk]
+            [clojure.data :refer [diff]])
   (:import java.util.Date
            java.net.URI
            java.math.BigDecimal
@@ -81,28 +82,41 @@
     (instance? schema.core.OptionalKey k) (:k k)
     :else (throw (Exception. (str "Key " k " must be a keyword")))))
 
-(def add-temp-id
-  (map (fn [x] (assoc x :db/id #db/id [:db.part/db]))))
+(defn enum? [x]
+  (let [[k1 k2 & ks] (keys x)]
+    (and (empty? ks)
+         (some #{k1} [:db/ident :db/id])
+         (some #{k2} [:db/ident :db/id]))))
 
-(def build-schema
-  (mapcat (fn [[k v]]
-            (let [default-attrs {:db/ident (get-key k)
-                                 :db/cardinality :db.cardinality/one}
-                  attrs (get-attrs v)]
-              (if (sequential? attrs) ;; enum
-                (if (= :db.cardinality/many (:db/cardinality (last attrs)))
-                  (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
-                  (conj attrs (assoc default-attrs :db/valueType :db.type/ref)))
-                (if (sequential? v)
-                  (if (instance? clojure.lang.PersistentArrayMap (first v))
-                    (flatten [(merge default-attrs attrs) (into [] build-schema (first v))])
-                    [(merge default-attrs attrs)])
-                  [(merge default-attrs attrs)]))))))
+(defn add-temp-id [x]
+  (assoc x :db/id (d/tempid :db.part/db)))
+
+(defn install-attribute [x]
+  (if-not (enum? x) (assoc x :db.install/_attribute :db.part/db) x))
+
+(defn build-schema [x]
+  (if (map? x)
+    (let [[k v] x
+          default-attrs {:db/ident (get-key k)
+                         :db/cardinality :db.cardinality/one}
+          attrs (get-attrs v)]
+      (if (sequential? attrs) ;; enum
+        (if (= :db.cardinality/many (:db/cardinality (last attrs)))
+          (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
+          (conj attrs (assoc default-attrs :db/valueType :db.type/ref)))
+        (if (sequential? v)
+          (if (instance? clojure.lang.PersistentArrayMap (first v))
+            (flatten [(merge default-attrs attrs) (into [] (mapcat build-schema) (first v))])
+            [(merge default-attrs attrs)])
+          [(merge default-attrs attrs)])))
+    (get-attrs x)))
+
+(def build-schema-tf (mapcat build-schema))
 
 (defn validate-txes [txes]
   (loop [txes txes next-txes []]
     (if-let [tx (first txes)]
-      (let [[tx-match] (filter (fn [x] = (:db/ident tx) (:db/ident x)) next-txes)]
+      (let [[tx-match] (filter (fn [x] (= (:db/ident tx) (:db/ident x))) next-txes)]
         (if tx-match
           (if (= tx tx-match)
             (recur (rest txes) next-txes)
@@ -110,27 +124,41 @@
           (recur (rest txes) (conj next-txes tx))))
       next-txes)))
 
-(defn schemas->tx [& schemas]
-  (let [txes (into [] (comp build-schema add-temp-id) (apply concat schemas))]
+(def build-tx-tf
+  (comp build-schema-tf
+        (map add-temp-id)
+        (map install-attribute)))
+
+(defn schemas->tx [schemas]
+  (let [txes (into [] build-tx-tf schemas)]
     (validate-txes txes)))
 
+;; Database conformity
+
+(defn- flatten-pull [x]
+  (into {} (map (fn [[k v]] [k (if (map? v) (:db/ident v) v)])) x))
+
 (defn- get-attributes [db idents]
-  (d/q '[:find (pull ?e [:db/valueType
-                         :db/cardinality
-                         :db/doc
-                         :db/unique
-                         :db/index
-                         :db/fulltext
-                         :db/isComponent
-                         :db/noHistory]) .
-         :in $ [?ident ...]
-         :where [?e :db/ident ?ident]]
-       db idents))
+  (map
+   flatten-pull
+   (d/q '[:find [(pull ?e [:db/ident
+                           :db/unique
+                           :db/index
+                           :db/fulltext
+                           :db/isComponent
+                           :db/noHistory
+                           {:db/valueType [:db/ident]
+                            :db/cardinality [:db/ident]
+                            :db/doc [:db/ident]}])
+                 ...]
+          :in $ [?ident ...]
+          :where [?e :db/ident ?ident]]
+        db idents)))
 
 (defn conforms?
   "Checks if database conforms to prismatc schemas"
-  [conn & schemas]
-  (let [txes (map #(dissoc % :db/id) (apply schemas->tx schemas))
+  [conn schemas]
+  (let [txes (map #(dissoc % :db/id :db.install/_attribute) (schemas->tx schemas))
         db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
     (doseq [tx txes]
       (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)]
@@ -140,3 +168,43 @@
             (throw (Exception. (str "Database attribute does not match schema. Got: "
                                     (pr-str db-attr) ", expected " (pr-str tx))))))))
     true))
+
+;; Database diffing
+
+(def possible-alterations
+  {[:db/cardinality :db.cardinality/one] #{[:db/cardinality :db.cardinality/many]}
+   [:db/cardinality :db.cardinality/many] #{[:db/cardinality :db.cardinality/one]}
+   [:db/isComponent true] #{[:db/isComponent false] [:db/isComponent nil]}
+   [:db/isComponent false] #{[:db/isComponent true]}
+   [:db/isComponent nil] #{[:db/isComponent true]}
+   [:db/noHistory true] #{[:db/noHistory false] [:db/noHistory nil]}
+   [:db/noHistory false] #{[:db/noHistory true]}
+   [:db/noHistory nil] #{[:db/noHistory true]}})
+
+(def alterations
+  [:db/isComponent :db/cardinality :db/noHistory :db/index :db/unique])
+
+(defn possible-alterations? [from to]
+  (let [possible-alteration?
+        (fn [alteration]
+          (let [to-value (get to alteration)
+                from-value (get from alteration)]
+            (when (or (some? from-value) (some? to-value))
+              [[from to]
+               (some? (some #{[alteration to-value]} (get possible-alterations [alteration from-value])))])))]
+    (into {} (comp (filter identity) (map possible-alteration?)) alterations)))
+
+(defn db-diff [conn schemas]
+  (let [txes (schemas->tx schemas)
+        db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
+    (loop [txes txes next-txes [] alterations {}]
+      (if-let [tx (first txes)]
+        (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)
+              attr (dissoc tx :db/id :db.install/_attribute)]
+          (if (nil? db-attr)
+            (recur (rest txes) (conj next-txes tx) alterations)
+            (if (not= db-attr attr)
+              (let [[from to _] (diff db-attr attr)]
+                (recur (rest txes) next-txes (assoc alterations (:db/ident tx) (possible-alterations? from to))))
+              (recur (rest txes) next-txes alterations))))
+        {:diff next-txes :alterations alterations}))))
