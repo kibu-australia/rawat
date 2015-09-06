@@ -4,33 +4,35 @@ Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic dat
 
 datomic-schema allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
 
-datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end. This means it should work with Datascript (probably... I haven't tested yet).
+datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end. This means it should work with Datascript (probably... but I haven't tested yet).
 
 You can read more about why we created this library and how we use it here.
 
 ## Usage
-
-Simply define your schemas
 
 ```clojure
 (require [schema.core :as s]
          [datomic-schema.core :as ds]
          [datomic.api :as d])
 
+;; Define your schemas!
+
 (def Role (s/enum :user.role/user :user.role/admin))
 
 (def User
   {:user/name s/Str
-   :user/email s/Str
-   :user/description (ds/datomic-meta {:fulltext true} s/Str)
-   :user/role Role
-   (s/optional-key :user/age) s/Num
-   :user/friends [(s/recursive #'User)]
-   :user/password s/Str})
+  :user/email s/Str
+  ;; If you need to include extra schema attributes for your datom, use `ds/datomic-meta`
+  :user/description (ds/datomic-meta {:fulltext true} s/Str)
+  :user/role Role
+  (s/optional-key :user/age) s/Num
+  :user/friends [(s/recursive #'User)]
+  :user/password s/Str})
 
 (def schemas [User Role])
 
 ;; Build transaction EDN
+
 (def schemas-tx (schemas->tx schemas))
 ;; =>
 [{:db/ident :user/name,
@@ -71,8 +73,32 @@ Simply define your schemas
 ;; And finally transact to database!
 (d/create-database "datomic:dev://test")
 (def conn (d/connect "datomic:dev://test")
-@(d/transact conn schema-tx)
+@(d/transact conn schemas-tx)
+
 (conforms? conn schemas) ;; => {:conforms? true :missing [] :mismatch []}
+
+;; Let's add a new schema
+(def Country
+  {:country/name s/Str})
+
+(def schemas [User Role Country]
+
+(conforms? conn schemas) ;; => {:conforms? false :missing [:country/name] :mismatch []}
+(def diff (db-diff conn schemas)) ;; => {:diff [] :conflicts []}
+
+@(d/transact conn (:diff diff))
+
+(conforms? conn schemas) ;; => {:conforms? true :missing [] :mismatch []}
+
+;; Altering existing schema (a user can now have many roles and has a new attribute, )
+
+(def User
+  (assoc User :user/role [Role]))
+
+(conforms? conn schemas) ;; => {:conforms? false :missing [] :mismatch [...]}
+
+(db-diff conn schemas) ;; => {:diff [] :conflicts []}
+
 ```
 
 ## Gotchas

@@ -102,7 +102,13 @@
 
 (defn build-schema [x]
   (cond
+    (instance? schema.core.EnumSchema x)
+    (get-attrs x)
+
     (map? x)
+    (into [] (mapcat build-schema) x)
+
+    (instance? clojure.lang.MapEntry x)
     (let [[k v] x
           default-attrs {:db/ident (get-key k)
                          :db/cardinality :db.cardinality/one}
@@ -113,25 +119,22 @@
           (conj attrs (assoc default-attrs :db/valueType :db.type/ref)))
         (if (sequential? v)
           (if (instance? clojure.lang.PersistentArrayMap (first v))
-            (flatten [(merge default-attrs attrs) (into [] (mapcat build-schema) (first v))])
+            (flatten [(merge default-attrs attrs) (build-schema (first v))])
             [(merge default-attrs attrs)])
           [(merge default-attrs attrs)])))
 
-    (instance? schema.core.EnumSchema x)
-    (get-attrs x)
-
-    :else (throw (Exception. (str "Don't know how to build tx for " (class x))))))
+    :else (throw (Exception. (str "Don't know how to build datom for " (class x))))))
 
 (def build-schema-tf (mapcat build-schema))
 
-(defn- validate-txes [txes]
+(defn validate-txes [txes]
   (loop [txes txes next-txes []]
     (if-let [tx (first txes)]
       (let [[tx-match] (filter (fn [x] (= (:db/ident tx) (:db/ident x))) next-txes)]
         (if tx-match
-          (if (= tx tx-match)
+          (if (= (dissoc tx :db/id) (dissoc tx-match :db/id))
             (recur (rest txes) next-txes)
-            (throw (Exception. (str "Conflicting attributes for :db/ident " (:db/ident tx)))))
+            (throw (Exception. (str "Conflicting attributes for datom " (:db/ident tx)))))
           (recur (rest txes) (conj next-txes tx))))
       next-txes)))
 
@@ -178,7 +181,7 @@
   Returns map containing:
     * :conforms? - booelan whether database conforms to schemas
     * :missing - vector of missing :db/ident values
-    * :mismatch - vector of mismatched schema attribute. Each value is a tuple of [database-attr schema-attr]"
+    * :mismatch - vector of mismatched schema attributes for each datom. Each value is a tuple of [database-attr schema-attr]"
   [conn schemas]
   (let [txes (map #(dissoc % :db/id :db.install/_attribute) (schemas->tx schemas))
         db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
@@ -241,8 +244,8 @@
 
 (s/defn db-diff :- Diff
   "Returns a map containing the difference between database and prismatic schemas:
-    * :diff - a transaction containing schema attributes not found in database (exlcuding any attributes requiring alteration)
-    * :conflicts - a map containing any schema attribute alterations required."
+    * :diff - a transaction of datoms not in database (exlcuding any schema attributes requiring alteration)
+    * :conflicts - a map containing the schema attribute alterations required for each datom."
   [conn schemas]
   (let [txes (schemas->tx schemas)
         db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
