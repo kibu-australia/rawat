@@ -1,5 +1,7 @@
 # datomic-schema
 
+[![Build Status](https://travis-ci.org/kibu-australia/datomic-schema.svg)](https://travis-ci.org/kibu-australia/datomic-schema)
+
 Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic database schemas!
 
 datomic-schema allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
