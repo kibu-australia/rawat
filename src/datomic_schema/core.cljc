@@ -140,7 +140,9 @@
         (map add-temp-id)
         (map install-attribute)))
 
-(defn schemas->tx [schemas]
+(defn schemas->tx
+  "Builds a Datomic transaction from a collection of prismatic schemas."
+  [schemas]
   (let [txes (into [] build-tx-tf schemas)]
     (validate-txes txes)))
 
@@ -238,9 +240,7 @@
    :conflicts {s/Keyword Alterations}})
 
 (s/defn db-diff :- Diff
-  "Returns the differnce between schemas and database
-
-  Returns a map containing:
+  "Returns a map containing the difference between database and prismatic schemas:
     * :diff - a transaction containing schema attributes not found in database (exlcuding any attributes requiring alteration)
     * :conflicts - a map containing any schema attribute alterations required."
   [conn schemas]
