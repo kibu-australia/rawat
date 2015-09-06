@@ -4,7 +4,7 @@ Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic dat
 
 datomic-schema allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
 
-datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end. This means it should work with Datascript (probably... but I haven't tested yet).
+datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end! This means it should work with Datascript (probably... but I haven't tested yet).
 
 You can read more about why we created this library and how we use it here.
 
@@ -103,7 +103,7 @@ You can read more about why we created this library and how we use it here.
 
 ## Gotchas
 
-* Namespace each key, unless many entities refer to the same attribute in the database.
+* Namespace each key, unless many entities refer to the same datom in the database.
 * No `:db.type/byte` type implemented
 * `schema.core.Predicate` maps to `:db.type/keyword`. This is because `s/Keyword` returns an instance of `Predicate`. I have no idea how predicate functions would be used in database schemas, anyway.
 
@@ -122,7 +122,7 @@ This will only slurp schemas defined using `s/defschema`.
 
 ### Datomic helpers
 
-`possible-alterations?` checks whether altering a schema attribute is possible.
+`possible-alterations?` checks whether the alteration of a schema attribute is possible.
 
 This returns a map where the key is a tuple `[from to]` and value is a boolean.
 
