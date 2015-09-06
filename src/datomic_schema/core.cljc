@@ -57,7 +57,6 @@
 #?(:clj
    (extend-protocol IDatomicSchema
      java.lang.Class (get-attrs [this] (class->datomic-type this))
-     java.lang.Boolean (get-attrs [_] )
      clojure.lang.PersistentArrayMap (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Recursive (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Predicate (get-attrs [_] {:db/valueType :db.type/keyword}) ;; s/Keyword returns s/pred
@@ -75,7 +74,7 @@
      schema.core.Either (get-attrs [this] (map get-attrs (:schemas this)))
      schema.core.Maybe (get-attrs [this] (get-attrs (:schema this)))
      schema.core.EnumSchema (get-attrs [this]
-                              ;; Returns each enumeration as ident
+                              ;; Returns each enumeration as datom
                               (let [[idents] (vals this)]
                                 (map (fn [ident] {:db/ident ident}) idents)))
      Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this))))))
@@ -86,7 +85,7 @@
   (cond
     (keyword? k) k
     (instance? schema.core.OptionalKey k) (:k k)
-    :else (throw (Exception. (str "Key " k " must be a keyword")))))
+    :else (throw (Exception. (str "Key " k " must be keyword")))))
 
 (defn- enum? [x]
   (let [[k1 k2 & ks] (keys x)]
@@ -244,7 +243,7 @@
 
 (s/defn db-diff :- Diff
   "Returns a map containing the difference between database and prismatic schemas:
-    * :diff - a transaction of datoms not in database (exlcuding any schema attributes requiring alteration)
+    * :diff - a transaction of schemas not in database (exlcuding any schema attributes requiring alteration)
     * :conflicts - a map containing the schema attribute alterations required for each datom."
   [conn schemas]
   (let [txes (schemas->tx schemas)
