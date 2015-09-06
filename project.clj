@@ -8,4 +8,4 @@
                  [prismatic/schema "1.0.1"]
                  [com.datomic/datomic-free "0.9.5206"]]
   :profiles {:dev {:dependencies [[midje "1.7.0"]]
-                   :plugins [[lein-midje "1.0.10"]]}})
+                   :plugins [[lein-midje "3.1.3"]]}})

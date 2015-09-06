@@ -51,6 +51,7 @@
        clojure.lang.Keyword {:db/valueType :db.type/keyword}
        java.util.UUID {:db/valueType :db.type/uuid}
        java.net.URI {:db/valueType :db.type/uri}
+       datomic.db.DbId {}
        ;; else, cannot handle
        (throw (Exception. (str "Don't know how to create schema for " (pr-str x)))))))
 
@@ -140,7 +141,8 @@
 (def build-tx-tf
   (comp build-schema-tf
         (map add-temp-id)
-        (map install-attribute)))
+        (map install-attribute)
+        (remove #(= :db/id (:db/ident %)))))
 
 (defn schemas->tx
   "Builds a Datomic transaction from a collection of prismatic schemas."
