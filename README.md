@@ -1,12 +1,12 @@
 # datomic-schema
 
-Use your [url=https://github.com/Prismatic/schema]Prismatic schemas[/url] as Datomic (or datascript) database schemas!
+Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic database schemas!
 
-datomic-schema allows you to describe the shape of your Datomic entities in your application code - removing duplication of defining your schemas twice.
+datomic-schema allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
 
-datomic-schema works for Clojurescript too, allowing you to reuse the same schemas on the front end. This means it should work with Datascript (probably... I haven't tested yet)
+datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end. This means it should work with Datascript (probably... I haven't tested yet).
 
-You can read more about why we created this library here.
+You can read more about why we created this library and how we use it here.
 
 ## Usage
 
@@ -31,7 +31,7 @@ Simply define your schemas
 (def schemas [User Role])
 
 ;; Build transaction EDN
-(def schema-tx (schema->tx schemas))
+(def schemas-tx (schemas->tx schemas))
 ;; =>
 [{:db/ident :user/name,
   :db/cardinality :db.cardinality/one,
@@ -72,25 +72,60 @@ Simply define your schemas
 (d/create-database "datomic:dev://test")
 (def conn (d/connect "datomic:dev://test")
 @(d/transact conn schema-tx)
-(conforms? conn schemas) ;; => true
+(conforms? conn schemas) ;; => {:conforms? true :missing [] :mismatch []}
 ```
 
 ## Gotchas
 
 * Namespace each key, unless many entities refer to the same attribute in the database.
-* No `:db.type/byte` implemented
-* `schema.core.Predicate` maps to `:db.type/keyword` as `s/Keyword` returns an instance of `Predicate`. I have no idea how predicate functions would be used in database schemas, anyway.
+* No `:db.type/byte` type implemented
+* `schema.core.Predicate` maps to `:db.type/keyword`. This is because `s/Keyword` returns an instance of `Predicate`. I have no idea how predicate functions would be used in database schemas, anyway.
+
+## Util functions
+
+### Prismatc schema helpers
+
+If you want to slurp an entire namespace of schemas, the convience function `ns->schemas` is available.
+
+This will only slurp schemas defined using `s/defschema`.
+
+```clojure
+;; Slurps up namespace foo.schemas
+(ns->schemas 'foo.schemas)
+```
+
+### Datomic helpers
+
+`possible-alterations?` checks whether altering a schema attribute is possible.
+
+This returns a map where the key is a tuple `[from to]` and value is a boolean.
+
+```clojure
+;; From :db.cardinality/many to :db/cardinality/one
+(possible-alterations? {:db/cardinality :db.cardinality/many} {:db/cardinality :db.cardinality/one})
+;; => {[{:db/cardinality :db.cardinality/many} {:db/cardinality :db.cardinality/one}] true}
+```
 
 ## Migration strategy
 
 `datomic-schema` does nothing to ensure that your application schemas match your database schema. Meaning it is up to the end user to handle migration.
 
-A good approach is to spit the output of `schemas->tx` to a .edn file and use a library like conformity[https://github.com/rkneufeld/conformity] to handle schema migration.
+A good approach is to spit the output of `schemas->tx` to a .edn file and use a library like [conformity](https://github.com/rkneufeld/conformity) to handle schema migration.
 
-As your application schemas change and become out of sync with your database, you will have to manually write the transactions to alter ...
+As your application schemas change and become out of sync with your database, you will have to manually manage the migrations.
+
 To assist with this, `datomic-schema` has a function `conforms?` which checks if your prismatic schemas match the database.
 
-Maybe it's possible to get the diff of a database and application schemas and build a transaction to sync database? An experiment for the future...
+### Diffing
+
+
+
+`db-diff` is available which returns a map of differences between schemas and database.
+
+```clojure
+
+```
+
 
 ## License
 

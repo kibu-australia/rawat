@@ -10,6 +10,12 @@
            java.math.BigInteger
            java.util.UUID))
 
+(defn ns->schemas [ns]
+  (for [var (vals (ns-interns ns))
+        :let [schema (var-get var)]
+        :when (:name (meta schema))]
+    schema))
+
 (s/defschema DatomicMetaAttrMap
   {(s/optional-key :db/doc) s/Str
    (s/optional-key :db/unique) (s/enum :db.unique/value :db.unique/identity)
@@ -82,7 +88,7 @@
     (instance? schema.core.OptionalKey k) (:k k)
     :else (throw (Exception. (str "Key " k " must be a keyword")))))
 
-(defn enum? [x]
+(defn- enum? [x]
   (let [[k1 k2 & ks] (keys x)]
     (and (empty? ks)
          (some #{k1} [:db/ident :db/id])
@@ -95,7 +101,8 @@
   (if-not (enum? x) (assoc x :db.install/_attribute :db.part/db) x))
 
 (defn build-schema [x]
-  (if (map? x)
+  (cond
+    (map? x)
     (let [[k v] x
           default-attrs {:db/ident (get-key k)
                          :db/cardinality :db.cardinality/one}
@@ -109,18 +116,22 @@
             (flatten [(merge default-attrs attrs) (into [] (mapcat build-schema) (first v))])
             [(merge default-attrs attrs)])
           [(merge default-attrs attrs)])))
-    (get-attrs x)))
+
+    (instance? schema.core.EnumSchema x)
+    (get-attrs x)
+
+    :else (throw (Exception. (str "Don't know how to build tx for " (class x))))))
 
 (def build-schema-tf (mapcat build-schema))
 
-(defn validate-txes [txes]
+(defn- validate-txes [txes]
   (loop [txes txes next-txes []]
     (if-let [tx (first txes)]
       (let [[tx-match] (filter (fn [x] (= (:db/ident tx) (:db/ident x))) next-txes)]
         (if tx-match
           (if (= tx tx-match)
             (recur (rest txes) next-txes)
-            (throw (Exception. (str "Conflicting attributes for ident " (:db/ident tx)))))
+            (throw (Exception. (str "Conflicting attributes for :db/ident " (:db/ident tx)))))
           (recur (rest txes) (conj next-txes tx))))
       next-txes)))
 
@@ -139,40 +150,55 @@
   (into {} (map (fn [[k v]] [k (if (map? v) (:db/ident v) v)])) x))
 
 (defn- get-attributes [db idents]
-  (map
-   flatten-pull
-   (d/q '[:find [(pull ?e [:db/ident
-                           :db/unique
-                           :db/index
-                           :db/fulltext
-                           :db/isComponent
-                           :db/noHistory
-                           {:db/valueType [:db/ident]
-                            :db/cardinality [:db/ident]
-                            :db/doc [:db/ident]}])
-                 ...]
-          :in $ [?ident ...]
-          :where [?e :db/ident ?ident]]
-        db idents)))
+  (->> (d/q '[:find [(pull ?e [:db/ident
+                               :db/unique
+                               :db/index
+                               :db/fulltext
+                               :db/isComponent
+                               :db/noHistory
+                               {:db/valueType [:db/ident]
+                                :db/cardinality [:db/ident]
+                                :db/doc [:db/ident]}])
+                     ...]
+              :in $ [?ident ...]
+              :where [?e :db/ident ?ident]]
+            db idents)
+       (map flatten-pull)))
 
-(defn conforms?
-  "Checks if database conforms to prismatc schemas"
+(s/defschema ConformsResult
+  {:conforms? s/Bool
+   :missing [s/Keyword]
+   :mismatch [[(s/one {s/Keyword s/Any} 'db-attr) (s/one {s/Keyword s/Any} 'schema-attr)]]})
+
+(s/defn conforms? :- ConformsResult
+  "Checks if database conforms to prismatc schemas
+
+  Returns map containing:
+    * :conforms? - booelan whether database conforms to schemas
+    * :missing - vector of missing :db/ident values
+    * :mismatch - vector of mismatched schema attribute. Each value is a tuple of [database-attr schema-attr]"
   [conn schemas]
   (let [txes (map #(dissoc % :db/id :db.install/_attribute) (schemas->tx schemas))
         db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
-    (doseq [tx txes]
-      (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)]
-        (if (nil? db-attr)
-          (throw (Exception. "Missing attribute from database " (:db/ident tx)))
-          (when (not= db-attr tx)
-            (throw (Exception. (str "Database attribute does not match schema. Got: "
-                                    (pr-str db-attr) ", expected " (pr-str tx))))))))
-    true))
+    (loop [txes txes missing [] mismatch []]
+      (if-let [tx (first txes)]
+        (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)]
+          (cond
+            (nil? db-attr)
+            (recur (rest txes) (conj missing (:db/ident tx)) mismatch)
+
+            (not= db-attr tx)
+            (recur (rest txes) missing (conj mismatch [db-attr tx]))
+
+            :else (recur (rest txes) missing mismatch)))
+        {:conforms? (and (empty? mismatch) (empty? missing))
+         :missing missing
+         :mismatch mismatch}))))
 
 ;; Database diffing
 
 ;; See "Altering Schema Attributes" - http://docs.datomic.com/schema.html
-(defn possible-alteration? [from to]
+(defn- possible-alteration? [from to]
   (match [from to]
    [{:db/cardinality :db.cardinality/one} {:db/cardinality :db.cardinality/many}] true
    [{:db/cardinality :db.cardinality/many} {:db/cardinality :db.cardinality/one}] true
@@ -194,10 +220,12 @@
    [{:db/unique :db.unique/value} {:db/unique :db.unique/identity}] true
    :else false))
 
-(def alterations
+(def ^:private alterations
   [[:db/isComponent] [:db/cardinality] [:db/noHistory] [:db/index :db/unique] [:db/unique]])
 
-(defn possible-alterations? [from to]
+(s/defschema Alterations {[(s/one {s/Keyword s/Any} 'from) (s/one {s/Keyword s/Any} 'to)] s/Bool})
+
+(s/defn possible-alterations? [from to] :- Alterations
   (into {}
    (for [alteration alterations
          :let [from-value (select-keys from alteration)
@@ -205,12 +233,16 @@
          :when (or (not (empty? from-value)) (not (empty? to-value)))]
      [[from-value to-value] (possible-alteration? from-value to-value)])))
 
-(defn db-diff
+(s/defschema Diff
+  {:diff [{s/Keyword s/Any}]
+   :conflicts {s/Keyword Alterations}})
+
+(s/defn db-diff :- Diff
   "Returns the differnce between schemas and database
 
   Returns a map containing:
-    * :diff - a transaction
-    * :alterations - a map of any schema alterations each key being :db/ident "
+    * :diff - a transaction containing schema attributes not found in database (exlcuding any attributes requiring alteration)
+    * :conflicts - a map containing any schema attribute alterations required."
   [conn schemas]
   (let [txes (schemas->tx schemas)
         db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
@@ -225,4 +257,4 @@
                     next-alterations (assoc alterations (:db/ident tx) (possible-alterations? from to))]
                 (recur (rest txes) next-txes next-alterations))
               (recur (rest txes) next-txes alterations))))
-        {:diff next-txes :alterations alterations}))))
+        {:diff next-txes :conflicts alterations}))))
