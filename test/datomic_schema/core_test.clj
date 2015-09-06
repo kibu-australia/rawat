@@ -108,24 +108,42 @@
   (facts
    "About transactions"
    (let [conn (d/connect uri)]
-     (fact @(d/transact conn (schemas->tx MockSchema))) => truthy
+      @(d/transact conn (schemas->tx MockSchema)) => truthy
 
-     (fact
       (conforms? conn MockSchema)
-      => {:conforms? true :missing [] :mismatch []})
+      => {:conforms? true :missing [] :mismatch []}
 
-     (fact
       (conforms? conn [MockSchema {:not-in-database s/Bool}])
-      => {:conforms? false :missing [:not-in-database] :mismatch []})
+      => {:conforms? false :missing [:not-in-database] :mismatch []}
 
-     (fact
       @(d/transact conn [{:db/id :some/many-enum                ;; Altering datom :some/many-enum from
                           :db/cardinality :db.cardinality/one   ;; cardinality of many to cardinality of one
                           :db.alter/_attribute :db.part/db}])   ;; should mean schemas no longer conform to db!
-      => truthy)
+      => truthy
 
-     (fact
       (conforms? conn MockSchema)
       => {:conforms? false
           :missing []
-          :mismatch [[]]})))) ;; TODO: write mismatch
+          :mismatch [[{:db/ident :some/many-enum
+                       :db/cardinality :db.cardinality/one
+                       :db/valueType :db.type/ref}
+                      {:db/ident :some/many-enum
+                       :db/cardinality :db.cardinality/many
+                       :db/valueType :db.type/ref}]]}
+
+      ;; From one to many is possible
+      (db-diff conn MockSchema)
+      => {:diff []
+          :conflicts {:some/many-enum {[{:db/cardinality :db.cardinality/one}
+                                        {:db/cardinality :db.cardinality/many}]
+                                       true}}}
+
+      (db-diff conn (assoc MockSchema :not-in-db s/Num))
+      => (just {:diff (just [(just {:db/ident :not-in-db
+                                    :db/id truthy
+                                    :db/cardinality :db.cardinality/one
+                                    :db.install/_attribute :db.part/db
+                                    :db/valueType :db.type/long})])
+                :conflicts {:some/many-enum {[{:db/cardinality :db.cardinality/one}
+                                              {:db/cardinality :db.cardinality/many}]
+                                             true}}}))))
