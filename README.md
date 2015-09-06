@@ -4,7 +4,7 @@ Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic dat
 
 datomic-schema allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
 
-datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end! This means it should work with Datascript (probably... but I haven't tested yet).
+datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end!
 
 You can read more about why we created this library and how we use it here.
 
