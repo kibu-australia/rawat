@@ -12,6 +12,8 @@ You can read more about why we created this library and how we use it here.
 
 ## Usage
 
+[![Clojars Project](http://clojars.org/kibu/rawat/latest-version.svg)](http://clojars.org/kibu/rawat)
+
 ```clojure
 (require [schema.core :as s]
          [rawat.core :as ds]
