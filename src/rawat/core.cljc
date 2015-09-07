@@ -1,4 +1,4 @@
-(ns datomic-schema.core
+(ns rawat.core
   (:require [schema.core :as s]
             [datomic.api :as d]
             [clojure.walk :as walk]

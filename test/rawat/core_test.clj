@@ -1,8 +1,8 @@
-(ns datomic-schema.core-test
+(ns rawat.core-test
   (:use midje.sweet)
   (:require [schema.core :as s]
             [datomic.api :as d]
-            [datomic-schema.core :refer :all]))
+            [rawat.core :refer :all]))
 
 (def EnumSchema
   (s/enum :enum/first :enum/second :enum/third))

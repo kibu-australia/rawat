@@ -1,12 +1,12 @@
-# datomic-schema
+# rawat
 
-[![Build Status](https://travis-ci.org/kibu-australia/datomic-schema.svg)](https://travis-ci.org/kibu-australia/datomic-schema)
+[![Build Status](https://travis-ci.org/kibu-australia/rawat.svg)](https://travis-ci.org/kibu-australia/rawat)
 
 Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic database schemas!
 
-datomic-schema allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
+rawat allows you to describe the shape of your Datomic entities within your application code - removing the duplication of defining your schemas in multiple places.
 
-datomic-schema works in clojurescript too, allowing you to reuse the same schemas on the front end!
+rawat works in clojurescript too, allowing you to reuse the same schemas on the front end!
 
 You can read more about why we created this library and how we use it here.
 
@@ -14,7 +14,7 @@ You can read more about why we created this library and how we use it here.
 
 ```clojure
 (require [schema.core :as s]
-         [datomic-schema.core :as ds]
+         [rawat.core :as ds]
          [datomic.api :as d])
 
 ;; Define your schemas!
@@ -136,13 +136,13 @@ This returns a map where the key is a tuple `[from to]` and value is a boolean.
 
 ## Migration strategy
 
-`datomic-schema` does nothing to ensure that your application schemas match your database schema. Meaning it is up to the end user to handle migration.
+`rawat` does nothing to ensure that your application schemas match your database schema. Meaning it is up to the end user to handle migration.
 
 A good approach is to spit the output of `schemas->tx` to a .edn file and use a library like [conformity](https://github.com/rkneufeld/conformity) to handle schema migration.
 
 As your application schemas change and become out of sync with your database, you will have to manually manage the migrations.
 
-To assist with this, `datomic-schema` has a function `conforms?` which checks if your prismatic schemas match the database.
+To assist with this, `rawat` has a function `conforms?` which checks if your prismatic schemas match the database.
 
 ### Diffing
 
