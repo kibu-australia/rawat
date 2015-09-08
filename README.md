@@ -1,5 +1,10 @@
 # rawat
 
+> Nature does not know extinction.
+> All it knows is transformation
+> - Wernher Von Braun
+
+
 [![Build Status](https://travis-ci.org/kibu-australia/rawat.svg)](https://travis-ci.org/kibu-australia/rawat)
 
 Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic database schemas!
@@ -11,6 +16,8 @@ rawat works in clojurescript too, allowing you to reuse the same schemas on the 
 You can read more about why we created this library and how we use it here.
 
 ## Usage
+
+[![Clojars Project](http://clojars.org/kibu/rawat/latest-version.svg)](http://clojars.org/kibu/rawat)
 
 ```clojure
 (require [schema.core :as s]
