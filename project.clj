@@ -7,5 +7,8 @@
                  [org.clojure/core.match "0.3.0-alpha4"]
                  [prismatic/schema "1.0.1"]
                  [com.datomic/datomic-free "0.9.5206"]]
+  :aliases {"deploy" ["do" "clean," "deploy" "clojars"]}
+  :lein-release {:deploy-via :shell
+                 :shell ["lein" "deploy"]}
   :profiles {:dev {:dependencies [[midje "1.7.0"]]
                    :plugins [[lein-midje "3.1.3"]]}})
