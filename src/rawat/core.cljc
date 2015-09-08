@@ -61,6 +61,9 @@
      clojure.lang.PersistentArrayMap (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Recursive (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Predicate (get-attrs [_] {:db/valueType :db.type/keyword}) ;; s/Keyword returns s/pred
+     schema.core.EqSchema (get-attrs [this]
+                            (assert (keyword? (:v this)) (str "Enumerated value must be keyword " (pr-str this)))
+                            [{:db/ident (:v this)}])
      clojure.lang.PersistentHashSet (get-attrs [this] (get-attrs (vec this)))
      clojure.lang.PersistentVector (get-attrs [this]
                                      (if-not (= (count this) 1)
@@ -77,7 +80,10 @@
      schema.core.EnumSchema (get-attrs [this]
                               ;; Returns each enumeration as datom
                               (let [[idents] (vals this)]
-                                (map (fn [ident] {:db/ident ident}) idents)))
+                                (map (fn [ident]
+                                       (assert (keyword? ident) (str "Enumerated value must be keyword " (pr-str ident)))
+                                       {:db/ident ident})
+                                     idents)))
      Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this))))))
    ;; TODO: write cljs equiv
    :cljs (extend-protocol IDatomicSchema default (get-attrs [_] {})))

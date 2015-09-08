@@ -108,6 +108,7 @@ You can read more about why we created this library and how we use it here.
 * Namespace each key, unless many entities refer to the same datom in the database.
 * No `:db.type/byte` type implemented
 * `schema.core.Predicate` maps to `:db.type/keyword`. This is because `s/Keyword` returns an instance of `Predicate`. I have no idea how predicate functions would be used in database schemas, anyway.
+* `s/eq` assumes reference to an enumerated value
 
 ## Util functions
 
