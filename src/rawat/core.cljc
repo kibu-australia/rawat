@@ -1,14 +1,16 @@
 (ns rawat.core
-  (:require [schema.core :as s]
-            [datomic.api :as d]
+  (:require [schema.core :as s :include-macros true]
+            #?(:clj [datomic.api :as d])
             [clojure.walk :as walk]
             [clojure.data :refer [diff]]
-            [clojure.core.match :refer [match]])
-  (:import java.util.Date
-           java.net.URI
-           java.math.BigDecimal
-           java.math.BigInteger
-           java.util.UUID))
+            #?(:clj [clojure.core.match :refer [match]]
+               :cljs [cljs.core.match :refer-macros [match] :include-macros true]))
+  #?(:clj (:import java.util.Date
+                   java.net.URI
+                   java.math.BigDecimal
+                   java.math.BigInteger
+                   java.util.UUID)
+     :cljs (:import goog.math.Long)))
 
 (defn ns->schemas [ns]
   (for [var (vals (ns-interns ns))
@@ -53,7 +55,19 @@
        java.net.URI {:db/valueType :db.type/uri}
        datomic.db.DbId {}
        ;; else, cannot handle
-       (throw (Exception. (str "Don't know how to create schema for " (pr-str x)))))))
+       (throw (Exception. (str "Don't know how to create schema for " (pr-str x))))))
+
+   :cljs ;; TODO: finish implementing!
+   (defn class->datomic-type [x]
+     string {:db/valueType :db.type/string}
+     date {:db/valueType :db.type/instant}
+     boolean {:db/valueType :db.type/boolean}
+     double {:db/valueType :db.type/double}
+     goog.math.Long {:db/valueType :db.type/long}
+     number {:db/valueType :db.type/long}
+     cljs.core.Keyword {:db/valueType :db.type/keyword}
+     ;; TODO: add more goog/cljs types
+     nil))
 
 #?(:clj
    (extend-protocol IDatomicSchema
@@ -85,14 +99,21 @@
                                        {:db/ident ident})
                                      idents)))
      Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this))))))
+
    ;; TODO: write cljs equiv
-   :cljs (extend-protocol IDatomicSchema default (get-attrs [_] {})))
+   :cljs
+   (extend-protocol IDatomicSchema
+     cljs.core.PersistentArrayMap (get-attrs [_] {:db/valueType :db.type/ref})
+
+     default (get-attrs [this]
+               (or (class->datomic-type this)
+                   (throw (js/Error. (str "Don't know how to create schema for " (class this))))))))
 
 (defn- get-key [k]
   (cond
     (keyword? k) k
     (instance? schema.core.OptionalKey k) (:k k)
-    :else (throw (Exception. (str "Key " k " must be keyword")))))
+    :else (throw (#?(:clj Exception. :cljs js/Error.) (str "Key " k " must be keyword")))))
 
 (defn- enum? [x]
   (let [[k1 k2 & ks] (keys x)]
@@ -114,7 +135,7 @@
     (map? x)
     (into [] (mapcat build-schema) x)
 
-    (instance? clojure.lang.MapEntry x)
+    (instance? #?(:clj clojure.lang.MapEntry :cljs cljs.core.MapEntry) x)
     (let [[k v] x
           default-attrs {:db/ident (get-key k)
                          :db/cardinality :db.cardinality/one}
@@ -124,12 +145,12 @@
           (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
           (conj attrs (assoc default-attrs :db/valueType :db.type/ref)))
         (if (sequential? v)
-          (if (instance? clojure.lang.PersistentArrayMap (first v))
+          (if (instance? #?(:clj clojure.lang.PersistentArrayMap :cljs cljs.core.PersistentArrayMap) (first v))
             (flatten [(merge default-attrs attrs) (build-schema (first v))])
             [(merge default-attrs attrs)])
           [(merge default-attrs attrs)])))
 
-    :else (throw (Exception. (str "Don't know how to build datom for " (class x))))))
+    :else (throw (#?(:clj Exception. :cljs js/Error.) (str "Don't know how to build datom for " (class x))))))
 
 (def build-schema-tf (mapcat build-schema))
 
@@ -140,7 +161,7 @@
         (if tx-match
           (if (= (dissoc tx :db/id) (dissoc tx-match :db/id))
             (recur (rest txes) next-txes)
-            (throw (Exception. (str "Conflicting attributes for datom " (:db/ident tx)))))
+            (throw (#?(:clj Exception. :cljs js/Error.) (str "Conflicting attributes for datom " (:db/ident tx)))))
           (recur (rest txes) (conj next-txes tx))))
       next-txes)))
 
@@ -161,51 +182,53 @@
 (defn- flatten-pull [x]
   (into {} (map (fn [[k v]] [k (if (map? v) (:db/ident v) v)])) x))
 
-(defn- get-attributes [db idents]
-  (->> (d/q '[:find [(pull ?e [:db/ident
-                               :db/unique
-                               :db/index
-                               :db/fulltext
-                               :db/isComponent
-                               :db/noHistory
-                               {:db/valueType [:db/ident]
-                                :db/cardinality [:db/ident]
-                                :db/doc [:db/ident]}])
-                     ...]
-              :in $ [?ident ...]
-              :where [?e :db/ident ?ident]]
-            db idents)
-       (map flatten-pull)))
+#?(:clj
+   (defn- get-attributes [db idents]
+     (->> (d/q '[:find [(pull ?e [:db/ident
+                                  :db/unique
+                                  :db/index
+                                  :db/fulltext
+                                  :db/isComponent
+                                  :db/noHistory
+                                  {:db/valueType [:db/ident]
+                                   :db/cardinality [:db/ident]
+                                   :db/doc [:db/ident]}])
+                        ...]
+                 :in $ [?ident ...]
+                 :where [?e :db/ident ?ident]]
+               db idents)
+          (map flatten-pull))))
 
 (s/defschema ConformsResult
   {:conforms? s/Bool
    :missing [s/Keyword]
    :mismatch [[(s/one {s/Keyword s/Any} 'db-attr) (s/one {s/Keyword s/Any} 'schema-attr)]]})
 
-(s/defn conforms? :- ConformsResult
-  "Checks if database conforms to prismatc schemas
+#?(:clj
+   (s/defn conforms? :- ConformsResult
+     "Checks if database conforms to prismatc schemas
 
   Returns map containing:
     * :conforms? - booelan whether database conforms to schemas
     * :missing - vector of missing :db/ident values
     * :mismatch - vector of mismatched schema attributes for each datom. Each value is a tuple of [database-attr schema-attr]"
-  [conn schemas]
-  (let [txes (map #(dissoc % :db/id :db.install/_attribute) (schemas->tx schemas))
-        db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
-    (loop [txes txes missing [] mismatch []]
-      (if-let [tx (first txes)]
-        (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)]
-          (cond
-            (nil? db-attr)
-            (recur (rest txes) (conj missing (:db/ident tx)) mismatch)
+     [conn schemas]
+     (let [txes (map #(dissoc % :db/id :db.install/_attribute) (schemas->tx schemas))
+           db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
+       (loop [txes txes missing [] mismatch []]
+         (if-let [tx (first txes)]
+           (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)]
+             (cond
+               (nil? db-attr)
+               (recur (rest txes) (conj missing (:db/ident tx)) mismatch)
 
-            (not= db-attr tx)
-            (recur (rest txes) missing (conj mismatch [db-attr tx]))
+               (not= db-attr tx)
+               (recur (rest txes) missing (conj mismatch [db-attr tx]))
 
-            :else (recur (rest txes) missing mismatch)))
-        {:conforms? (and (empty? mismatch) (empty? missing))
-         :missing missing
-         :mismatch mismatch}))))
+               :else (recur (rest txes) missing mismatch)))
+           {:conforms? (and (empty? mismatch) (empty? missing))
+            :missing missing
+            :mismatch mismatch})))))
 
 ;; Database diffing
 
@@ -249,22 +272,23 @@
   {:diff [{s/Keyword s/Any}]
    :conflicts {s/Keyword Alterations}})
 
-(s/defn db-diff :- Diff
-  "Returns a map containing the difference between database and prismatic schemas:
+#?(:clj
+   (s/defn db-diff :- Diff
+     "Returns a map containing the difference between database and prismatic schemas:
     * :diff - a transaction of schemas not in database (exlcuding any schema attributes requiring alteration)
     * :conflicts - a map containing the schema attribute alterations required for each datom."
-  [conn schemas]
-  (let [txes (schemas->tx schemas)
-        db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
-    (loop [txes txes next-txes [] alterations {}]
-      (if-let [tx (first txes)]
-        (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)
-              attr (dissoc tx :db/id :db.install/_attribute)]
-          (if (nil? db-attr)
-            (recur (rest txes) (conj next-txes tx) alterations)
-            (if (not= db-attr attr)
-              (let [[from to _] (diff db-attr attr)
-                    next-alterations (assoc alterations (:db/ident tx) (possible-alterations? from to))]
-                (recur (rest txes) next-txes next-alterations))
-              (recur (rest txes) next-txes alterations))))
-        {:diff next-txes :conflicts alterations}))))
+     [conn schemas]
+     (let [txes (schemas->tx schemas)
+           db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
+       (loop [txes txes next-txes [] alterations {}]
+         (if-let [tx (first txes)]
+           (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)
+                 attr (dissoc tx :db/id :db.install/_attribute)]
+             (if (nil? db-attr)
+               (recur (rest txes) (conj next-txes tx) alterations)
+               (if (not= db-attr attr)
+                 (let [[from to _] (diff db-attr attr)
+                       next-alterations (assoc alterations (:db/ident tx) (possible-alterations? from to))]
+                   (recur (rest txes) next-txes next-alterations))
+                 (recur (rest txes) next-txes alterations))))
+           {:diff next-txes :conflicts alterations})))))
