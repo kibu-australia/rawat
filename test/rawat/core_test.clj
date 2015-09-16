@@ -4,6 +4,34 @@
             [datomic.api :as d]
             [rawat.core :refer :all]))
 
+(facts "About datomic-meta"
+       (fact "Should work for eq"
+             (build-schema {:a (datomic-meta {:db/index true} (s/eq :b))})
+             =>
+             (just [{:db/ident :a, :db/cardinality :db.cardinality/one, :db/index true, :db/valueType :db.type/ref}
+                    {:db/ident :b}]
+                   :in-any-order))
+       (fact "Should work for single value"
+             (build-schema {:a (datomic-meta {:db/index true} s/Str)})
+             => (just [{:db/ident :a, :db/cardinality :db.cardinality/one, :db/index true :db/valueType :db.type/string}]
+                      :in-any-order))
+       (fact "Should work for cardinality many"
+             (build-schema {:a (datomic-meta {:db/index true} [s/Str])})
+             => (just [{:db/ident :a, :db/cardinality :db.cardinality/many, :db/index true :db/valueType :db.type/string}]
+                      :in-any-order))
+
+       (fact "Should work for enum"
+             (build-schema {:a (datomic-meta {:db/index true} (s/enum :b))})
+             => (just [{:db/ident :a, :db/cardinality :db.cardinality/one, :db/index true, :db/valueType :db.type/ref}
+                       {:db/ident :b}]
+                      :in-any-order))
+
+       (fact "Should work for enum (cardinality of many)"
+             (build-schema {:a (datomic-meta {:db/index true} [(s/enum :b)])})
+             => (just [{:db/ident :a, :db/cardinality :db.cardinality/many, :db/index true, :db/valueType :db.type/ref}
+                       {:db/ident :b}]
+                      :in-any-order)))
+
 (def EnumSchema
   (s/enum :enum/first :enum/second :enum/third))
 
@@ -12,7 +40,7 @@
    :some/string s/Str
    :some/many-date [s/Inst]
    :some/keyword s/Keyword
-   (datomic-meta :some/full-text-string {:db/fulltext true}) s/Str
+   :some/full-text-string (datomic-meta {:db/fulltext true} s/Str)
    :some/enum EnumSchema
    :some/many-enum [(s/enum :enum/fourth :enum/fifth)]
    (s/optional-key :some/optional-recursive-key) (s/recursive #'MockSchema)})

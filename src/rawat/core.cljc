@@ -29,14 +29,22 @@
 (defprotocol IDatomicSchema
   (get-attrs [this]))
 
-(defrecord DatomicMeta [k attrs]
+(defrecord DatomicMeta [attrs t]
   schema.core.Schema
-  (spec [_] (s/spec k))
-  (explain [_] (s/explain k)))
+  (spec [_] (s/spec t))
+  (explain [_] (s/explain t))
+  IDatomicSchema
+  (get-attrs [this]
+    (let [t-attrs (get-attrs t)]
+      (if (sequential? t-attrs)
+        (if (:db/cardinality (last t-attrs))
+          (conj (vec (butlast t-attrs)) (merge attrs (last t-attrs))) ;; many
+          (conj (vec t-attrs) (assoc attrs :db/cardinality :db.cardinality/one :db/valueType :db.type/ref))) ;; eq
+        (merge attrs t-attrs)))))
 
 (s/defn ^:always-validate datomic-meta :- DatomicMeta
-  [k :- s/Any attrs :- DatomicMetaAttrMap]
-  (DatomicMeta. k attrs))
+  [attrs :- DatomicMetaAttrMap t :- s/Any]
+  (DatomicMeta. attrs t))
 
 #?(:clj
    (defn class->datomic-type [x]
@@ -148,7 +156,9 @@
       (if (sequential? attrs) ;; enum
         (if (= :db.cardinality/many (:db/cardinality (last attrs)))
           (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
-          (conj attrs (assoc default-attrs :db/valueType :db.type/ref)))
+          (if (= :db.cardinality/one (:db/cardinality (last attrs)))
+            (conj (butlast attrs) (merge default-attrs (last attrs)))
+            (conj attrs (assoc default-attrs :db/valueType :db.type/ref))))
         (if (sequential? v)
           (if (instance? #?(:clj clojure.lang.PersistentArrayMap :cljs cljs.core.PersistentArrayMap) (first v))
             (flatten [(merge default-attrs attrs) (build-schema (first v))])
