@@ -116,12 +116,17 @@
 
 (defn- enum? [x]
   (let [[k1 k2 & ks] (keys x)]
-    (and (empty? ks)
-         (some #{k1} [:db/ident :db/id])
-         (some #{k2} [:db/ident :db/id]))))
+    (or (and (empty? ks)
+             (some #{k1} [:db/ident :db/id])
+             (some #{k2} [:db/ident :db/id]))
+        (and (empty? ks)
+             (nil? k2)
+             (some #{k1} [:db/ident])))))
 
 (defn add-temp-id [x]
-  (assoc x :db/id (d/tempid :db.part/db)))
+  (if (enum? x)
+    (assoc x :db/id (d/tempid :db.part/user))
+    (assoc x :db/id (d/tempid :db.part/db))))
 
 (defn install-attribute [x]
   (if-not (enum? x) (assoc x :db.install/_attribute :db.part/db) x))
