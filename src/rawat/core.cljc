@@ -81,6 +81,7 @@
      clojure.lang.PersistentHashMap (get-attrs [_] {:db/valueType :db.type/ref})
      clojure.lang.PersistentArrayMap (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Recursive (get-attrs [_] {:db/valueType :db.type/ref})
+     clojure.lang.Var (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Predicate (get-attrs [_] {:db/valueType :db.type/keyword}) ;; s/Keyword returns s/pred
      schema.core.EqSchema (get-attrs [this]
                             (assert (keyword? (:v this)) (str "Enumerated value must be keyword " (pr-str this)))
