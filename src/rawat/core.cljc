@@ -29,16 +29,14 @@
 (defprotocol IDatomicSchema
   (get-attrs [this]))
 
-(defrecord DatomicMeta [attrs t]
+(defrecord DatomicMeta [k attrs]
   schema.core.Schema
-  (spec [_] (s/spec t))
-  (explain [_] (s/explain t))
-  IDatomicSchema
-  (get-attrs [_] (merge attrs (get-attrs t))))
+  (spec [_] (s/spec k))
+  (explain [_] (s/explain k)))
 
 (s/defn ^:always-validate datomic-meta :- DatomicMeta
-  [attrs :- DatomicMetaAttrMap t :- s/Any]
-  (DatomicMeta. attrs t))
+  [k :- s/Any attrs :- DatomicMetaAttrMap]
+  (DatomicMeta. k attrs))
 
 #?(:clj
    (defn class->datomic-type [x]
@@ -112,6 +110,7 @@
 (defn- get-key [k]
   (cond
     (keyword? k) k
+    (instance? DatomicMeta k) (get-key (:k k))
     (instance? schema.core.OptionalKey k) (:k k)
     :else (throw (#?(:clj Exception. :cljs js/Error.) (str "Key " k " must be keyword")))))
 
@@ -139,6 +138,7 @@
     (let [[k v] x
           default-attrs {:db/ident (get-key k)
                          :db/cardinality :db.cardinality/one}
+          default-attrs (if (instance? DatomicMeta k) (merge (:attrs k) default-attrs) default-attrs)
           attrs (get-attrs v)]
       (if (sequential? attrs) ;; enum
         (if (= :db.cardinality/many (:db/cardinality (last attrs)))

@@ -12,7 +12,7 @@
    :some/string s/Str
    :some/many-date [s/Inst]
    :some/keyword s/Keyword
-   :some/full-text-string (datomic-meta {:db/fulltext true} s/Str)
+   (datomic-meta :some/full-text-string {:db/fulltext true}) s/Str
    :some/enum EnumSchema
    :some/many-enum [(s/enum :enum/fourth :enum/fifth)]
    (s/optional-key :some/optional-recursive-key) (s/recursive #'MockSchema)})
