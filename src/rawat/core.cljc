@@ -78,6 +78,7 @@
 #?(:clj
    (extend-protocol IDatomicSchema
      java.lang.Class (get-attrs [this] (class->datomic-type this))
+     clojure.lang.PersistentHashMap (get-attrs [_] {:db/valueType :db.type/ref})
      clojure.lang.PersistentArrayMap (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Recursive (get-attrs [_] {:db/valueType :db.type/ref})
      schema.core.Predicate (get-attrs [_] {:db/valueType :db.type/keyword}) ;; s/Keyword returns s/pred
@@ -160,7 +161,7 @@
             (conj (butlast attrs) (merge default-attrs (last attrs)))
             (conj attrs (assoc default-attrs :db/valueType :db.type/ref))))
         (if (sequential? v)
-          (if (instance? #?(:clj clojure.lang.PersistentArrayMap :cljs cljs.core.PersistentArrayMap) (first v))
+          (if (map? (first v))
             (flatten [(merge default-attrs attrs) (build-schema (first v))])
             [(merge default-attrs attrs)])
           [(merge default-attrs attrs)])))
