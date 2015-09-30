@@ -106,7 +106,7 @@
                                        (assert (keyword? ident) (str "Enumerated value must be keyword " (pr-str ident)))
                                        {:db/ident ident})
                                      idents)))
-     Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this))))))
+     Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this) " - " (pr-str this))))))
 
    ;; TODO: write cljs equiv
    :cljs
@@ -115,7 +115,7 @@
 
      default (get-attrs [this]
                (or (class->datomic-type this)
-                   (throw (js/Error. (str "Don't know how to create schema for " (class this))))))))
+                   (throw (js/Error. (str "Don't know how to create schema for " (class this) " - " (pr-str this))))))))
 
 (defn- get-key [k]
   (cond
@@ -123,6 +123,21 @@
     (instance? DatomicMeta k) (get-key (:k k))
     (instance? schema.core.OptionalKey k) (:k k)
     :else (throw (#?(:clj Exception. :cljs js/Error.) (str "Key " k " must be keyword")))))
+
+(defprotocol IPullSchema
+  (pattern [this]))
+
+(extend-protocol IPullSchema
+  clojure.lang.PersistentHashMap
+  (pattern [this]
+    (map (fn [[k v]]
+           [(get-key k) ]
+           ))
+
+    ))
+
+
+
 
 (defn- enum? [x]
   (let [[k1 k2 & ks] (keys x)]
@@ -151,21 +166,24 @@
 
     (instance? #?(:clj clojure.lang.MapEntry :cljs cljs.core.MapEntry) x)
     (let [[k v] x
-          default-attrs {:db/ident (get-key k)
-                         :db/cardinality :db.cardinality/one}
-          default-attrs (if (instance? DatomicMeta k) (merge (:attrs k) default-attrs) default-attrs)
-          attrs (get-attrs v)]
-      (if (sequential? attrs) ;; enum
-        (if (= :db.cardinality/many (:db/cardinality (last attrs)))
-          (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
-          (if (= :db.cardinality/one (:db/cardinality (last attrs)))
-            (conj (butlast attrs) (merge default-attrs (last attrs)))
-            (conj attrs (assoc default-attrs :db/valueType :db.type/ref))))
-        (if (sequential? v)
-          (if (map? (first v))
-            (flatten [(merge default-attrs attrs) (build-schema (first v))])
-            [(merge default-attrs attrs)])
-          [(merge default-attrs attrs)])))
+          ident (get-key k)]
+      (if (= :db/id ident)
+        []
+        (let [default-attrs {:db/ident (get-key k)
+                             :db/cardinality :db.cardinality/one}
+              default-attrs (if (instance? DatomicMeta k) (merge (:attrs k) default-attrs) default-attrs)
+              attrs (get-attrs v)]
+          (if (sequential? attrs) ;; enum
+            (if (= :db.cardinality/many (:db/cardinality (last attrs)))
+              (conj (butlast attrs) (merge default-attrs (last attrs))) ;; has-many enum
+              (if (= :db.cardinality/one (:db/cardinality (last attrs)))
+                (conj (butlast attrs) (merge default-attrs (last attrs)))
+                (conj attrs (assoc default-attrs :db/valueType :db.type/ref))))
+            (if (sequential? v)
+              (if (map? (first v))
+                (flatten [(merge default-attrs attrs) (build-schema (first v))])
+                [(merge default-attrs attrs)])
+              [(merge default-attrs attrs)])))))
 
     :else (throw (#?(:clj Exception. :cljs js/Error.) (str "Don't know how to build datom for " (class x))))))
 
