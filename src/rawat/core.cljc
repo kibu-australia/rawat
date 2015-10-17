@@ -11,7 +11,8 @@
                    java.math.BigDecimal
                    java.math.BigInteger
                    java.util.UUID)
-     :cljs (:import goog.math.Long goog.Uri)))
+     :cljs (:import goog.math.Long
+                    goog.Uri)))
 
 (defn ns->schemas [ns]
   (for [var (vals (ns-interns ns))
@@ -80,24 +81,6 @@
        ;; else, cannot handle
        (throw (js/Error. (str "Don't know how to create schema for " (pr-str x)))))))
 
-(extend-protocol IDatomicSchema
-  schema.core.Recursive (get-attrs [_] {:db/valueType :db.type/ref})
-  schema.core.Predicate (get-attrs [_] {:db/valueType :db.type/keyword}) ;; s/Keyword returns s/pred
-  schema.core.EqSchema (get-attrs [this]
-                         (assert (keyword? (:v this)) (str "Enumerated value must be keyword " (pr-str this)))
-                         [{:db/ident (:v this)}])
-  schema.core.One (get-attrs [this] (get-attrs (:schema this)))
-  schema.core.Either (get-attrs [this] (map get-attrs (:schemas this)))
-  schema.core.Maybe (get-attrs [this] (get-attrs (:schema this)))
-  schema.core.EnumSchema
-  (get-attrs [this]
-    ;; Returns each enumeration as datom
-    (let [[idents] (vals this)]
-      (map (fn [ident]
-             (assert (keyword? ident) (str "Enumerated value must be keyword " (pr-str ident)))
-             {:db/ident ident})
-           idents))))
-
 (defn- get-attrs-vec [this]
   (if-not (= (count this) 1)
     (throw (Exception. (str "Cannot create schema for " (pr-str this))))
@@ -110,26 +93,35 @@
 
 (defonce ^:private attr-ref {:db/valueType :db.type/ref})
 
-#?(:clj
-   (extend-protocol IDatomicSchema
-     java.lang.Class (get-attrs [this] (class->datomic-type this))
-     clojure.lang.PersistentHashMap (get-attrs [_] attr-ref)
-     clojure.lang.PersistentArrayMap (get-attrs [_] attr-ref)
-     clojure.lang.Var (get-attrs [_] attr-ref)
-     clojure.lang.PersistentHashSet (get-attrs [this] (get-attrs (vec this)))
-     clojure.lang.PersistentVector (get-attrs [this] (get-attrs-vec this))
-     Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this) " - " (pr-str this))))))
+(extend-protocol IDatomicSchema
+  schema.core.Recursive (get-attrs [_] {:db/valueType :db.type/ref})
+  schema.core.Predicate (get-attrs [_] {:db/valueType :db.type/keyword}) ;; s/Keyword returns s/pred
+  schema.core.EqSchema (get-attrs [this]
+                         (assert (keyword? (:v this)) (str "Enumerated value must be keyword " (pr-str this)))
+                         [{:db/ident (:v this)}])
+  schema.core.One (get-attrs [this] (get-attrs (:schema this)))
+  schema.core.Either (get-attrs [this] (map get-attrs (:schemas this)))
+  schema.core.Maybe (get-attrs [this] (get-attrs (:schema this)))
+  schema.core.EnumSchema (get-attrs [this]
+                           ;; Returns each enumeration as datom
+                           (let [[idents] (vals this)]
+                             (map (fn [ident]
+                                    (assert (keyword? ident) (str "Enumerated value must be keyword " (pr-str ident)))
+                                    {:db/ident ident})
+                                  idents)))
 
-   :cljs
-   (extend-protocol IDatomicSchema
-     cljs.core.PersistentHashMap (get-attrs [_] attr-ref)
-     cljs.core.PersistentArrayMap (get-attrs [_] attr-ref)
-     cljs.core.Var (get-attrs [_] attr-ref)
-     cljs.core.PersistentHashSet (get-attrs [this] (get-attrs (vec this)))
-     cljs.core.PersistentVector (get-attrs [this] (get-attrs-vec this))
-     default (get-attrs [this]
-               (or (class->datomic-type this)
-                   (throw (js/Error. (str "Don't know how to create schema for " (class this) " - " (pr-str this))))))))
+  #?@(:clj [java.lang.Class (get-attrs [this] (class->datomic-type this))
+            Object (get-attrs [this] (throw (Exception. (str "Don't know how to create schema for " (class this) " - " (pr-str this)))))]
+
+      :cljs [default (get-attrs [this]
+                      (or (class->datomic-type this)
+                          (throw (js/Error. (str "Don't know how to create schema for " (class this) " - " (pr-str this))))))])
+
+  #?(:clj clojure.lang.PersistentHashMap :cljs cljs.core.PersistentHashMap) (get-attrs [_] attr-ref)
+  #?(:clj clojure.lang.PersistentArrayMap :cljs cljs.core.PersistentArrayMap) (get-attrs [_] attr-ref)
+  #?(:clj clojure.lang.Var :cljs cljs.core.Var) (get-attrs [_] attr-ref)
+  #?(:clj clojure.lang.PersistentHashSet :cljs cljs.core.PersistentHashSet) (get-attrs [this] (get-attrs (vec this)))
+  #?(:clj clojure.lang.PersistentVector :cljs cljs.core.PersistentVector) (get-attrs [this] (get-attrs-vec this)))
 
 (defn- get-key [k]
   (cond
