@@ -1,11 +1,10 @@
 (ns rawat.core
   (:require [schema.core :as s :include-macros true]
-            #?(:clj [datomic.api :as d])
-            #?(:cljs [rawat.datomic :as d])
-            [clojure.walk :as walk]
-            [clojure.data :refer [diff]]
-            #?(:clj [clojure.core.match :refer [match]]
-               :cljs [cljs.core.match :refer-macros [match] :include-macros true]))
+            #?@(:clj [[datomic.api :as d]
+                      [clojure.data :refer [diff]]
+                      [clojure.core.match :refer [match]]]
+                :cljs [[rawat.datomic :as d]
+                       [cljs.core.match :refer-macros [match] :include-macros true]]))
   #?(:clj (:import java.util.Date
                    java.net.URI
                    java.math.BigDecimal

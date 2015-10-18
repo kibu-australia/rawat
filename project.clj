@@ -11,4 +11,5 @@
   :lein-release {:deploy-via :shell
                  :shell ["lein" "deploy"]}
   :profiles {:dev {:dependencies [[midje "1.7.0"]]
-                   :plugins [[lein-midje "3.1.3"]]}})
+                   :plugins [[lein-midje "3.1.3"]
+                             [com.cemerick/clojurescript.test "0.3.3"]]}})
