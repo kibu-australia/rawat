@@ -308,7 +308,7 @@
        (loop [txes txes next-txes [] alterations {}]
          (if-let [tx (first txes)]
            (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)
-                 attr (dissoc tx :db/id :db.install/_attribute)]
+                 attr (dissoc tx :db/id :db/doc :db.install/_attribute)]
              (if (nil? db-attr)
                (recur (rest txes) (conj next-txes tx) alterations)
                (if (not= db-attr attr)
@@ -317,3 +317,31 @@
                    (recur (rest txes) next-txes next-alterations))
                  (recur (rest txes) next-txes alterations))))
            {:diff next-txes :conflicts alterations})))))
+
+#?(:clj
+   (defn schema->pull-query [schema]
+     (reduce-kv
+      (fn [m k v]
+        (let [k (get-key k)
+              v (if (instance? DatomicMeta v)
+                  (:t v)
+                  v)
+              v (if (or (set? v) (sequential? v))
+                  (first v) v)]
+          (conj m
+                (cond
+                  (instance? schema.core.Recursive v) {k 1}
+                  (instance? schema.core.EnumSchema v) {k [:db/ident]}
+                  (instance?  schema.core.EqSchema v) {k [:db/ident]}
+                  (and (map? v) (not (record? v))) {k (schema->pull-query v)}
+                  :else k))))
+      []
+      schema)))
+
+#?(:clj
+   (defn pull-schema [db schema eid]
+     (d/pull db (schema->pull-query schema))))
+
+#?(:clj
+   (defn pull-many-schema [db schema eids]
+     (d/pull-many db (schema->pull-query schema) eids)))
