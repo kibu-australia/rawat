@@ -340,7 +340,7 @@
 
 #?(:clj
    (defn pull-schema [db schema eid]
-     (d/pull db (schema->pull-query schema))))
+     (d/pull db (schema->pull-query schema) eid)))
 
 #?(:clj
    (defn pull-many-schema [db schema eids]
