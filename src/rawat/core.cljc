@@ -318,25 +318,59 @@
                  (recur (rest txes) next-txes alterations))))
            {:diff next-txes :conflicts alterations})))))
 
-#?(:clj
-   (defn schema->pull-query [schema]
-     (reduce-kv
-      (fn [m k v]
-        (let [k (get-key k)
-              v (if (instance? DatomicMeta v)
-                  (:t v)
-                  v)
-              v (if (or (set? v) (sequential? v))
-                  (first v) v)]
-          (conj m
-                (cond
-                  (instance? schema.core.Recursive v) {k 1}
-                  (instance? schema.core.EnumSchema v) {k [:db/ident]}
-                  (instance?  schema.core.EqSchema v) {k [:db/ident]}
-                  (and (map? v) (not (record? v))) {k (schema->pull-query v)}
-                  :else k))))
-      []
-      schema)))
+(declare schema->pull-query)
+
+(defprotocol IPull
+  (get-value [this])
+  (pattern [this]))
+
+(extend-protocol IPull
+  DatomicMeta
+  (pattern [_] nil)
+  (get-value [this] (get-value (:t this)))
+  schema.core.EqSchema
+  (pattern [_] nil)
+  (get-value [this] (get-value (:v this)))
+  schema.core.One
+  (pattern [_] nil)
+  (get-value [this] (get-value (:schema this)))
+  schema.core.Maybe
+  (pattern [_] nil)
+  (get-value [this] (get-value (:schema this)))
+  #?(:clj clojure.lang.PersistentHashSet :cljs cljs.core.PersistentHashSet)
+  (pattern [_] nil)
+  (get-value [this] (get-value (first this)))
+  #?(:clj clojure.lang.PersistentVector :cljs cljs.core.PersistentVector)
+  (pattern [_] nil)
+  (get-value [this] (get-value (first this)))
+
+  schema.core.Recursive
+  (get-value [this] this)
+  (pattern [_] 1)
+  schema.core.EnumSchema
+  (get-value [this] this)
+  (pattern [_] [:db/ident])
+  #?(:clj clojure.lang.PersistentHashMap :cljs cljs.core.PersistentHashMap)
+  (get-value [this] this)
+  (pattern [this] (schema->pull-query this))
+  #?(:clj clojure.lang.PersistentArrayMap :cljs cljs.core.PersistentArrayMap)
+  (get-value [this] this)
+  (pattern [this] (schema->pull-query this))
+
+  #?@(:clj [java.lang.Class
+            (pattern [this] nil)
+            (get-value [this] this)])
+
+  Object
+  (pattern [this] nil)
+  (get-value [this] this))
+
+(defn schema->pull-query [schema]
+  (reduce-kv (fn [m k v]
+               (if-let [next-v (pattern (get-value v))]
+                 (conj m {(get-key k) next-v})
+                 (conj m k)))
+             [] schema))
 
 #?(:clj
    (defn pull-schema [db schema eid]
