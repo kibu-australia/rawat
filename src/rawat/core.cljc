@@ -318,11 +318,16 @@
                  (recur (rest txes) next-txes alterations))))
            {:diff next-txes :conflicts alterations})))))
 
-(declare schema->pull-query)
-
 (defprotocol IPull
   (get-value [this])
   (pattern [this]))
+
+(defn schema->pull-query [schema]
+  (reduce-kv (fn [m k v]
+               (if-let [next-v (pattern (get-value v))]
+                 (conj m {(get-key k) next-v})
+                 (conj m k)))
+             [] (get-value schema)))
 
 (extend-protocol IPull
   DatomicMeta
@@ -364,13 +369,6 @@
   Object
   (pattern [this] nil)
   (get-value [this] this))
-
-(defn schema->pull-query [schema]
-  (reduce-kv (fn [m k v]
-               (if-let [next-v (pattern (get-value v))]
-                 (conj m {(get-key k) next-v})
-                 (conj m k)))
-             [] schema))
 
 #?(:clj
    (defn pull-schema [db schema eid]
