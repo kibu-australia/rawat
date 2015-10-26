@@ -326,7 +326,7 @@
   (reduce-kv (fn [m k v]
                (if-let [next-v (pattern (get-value v))]
                  (conj m {(get-key k) next-v})
-                 (conj m k)))
+                 (conj m (get-key k))))
              [] (get-value schema)))
 
 (extend-protocol IPull
