@@ -348,7 +348,9 @@
   #?(:clj clojure.lang.PersistentVector :cljs cljs.core.PersistentVector)
   (pattern [_] nil)
   (get-value [this] (get-value (first this)))
-
+  #?(:clj clojure.lang.Keyword :cljs cljs.core.Keyword)
+  (pattern [_] [:db/ident])
+  (get-value [this] this)
   schema.core.Recursive
   (get-value [this] this)
   (pattern [_] 1)
@@ -361,11 +363,9 @@
   #?(:clj clojure.lang.PersistentArrayMap :cljs cljs.core.PersistentArrayMap)
   (get-value [this] this)
   (pattern [this] (schema->pull-query this))
-
   #?@(:clj [java.lang.Class
             (pattern [this] nil)
             (get-value [this] this)])
-
   Object
   (pattern [this] nil)
   (get-value [this] this))
