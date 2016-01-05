@@ -410,11 +410,18 @@
 
 #?(:clj
    (defn- expand-ident [db entity-map]
-     (into {} (map (fn [[k v]]
-                     (if (map? v)
-                       [k (:db/ident (d/pull db '[:db/ident] (:db/id v)))]
-                       [k v])))
-           entity-map)))
+     (letfn [(handle-map [x]
+               (if (= [:db/id] (keys x))
+                 (:db/ident (d/pull db '[:db/ident] (:db/id x)))
+                 (:db/id x)))]
+       (into {}
+             (map (fn [[k v]]
+                    [k
+                     (cond
+                       (map? v) (handle-map v)
+                       (sequential? v) (into [] (map #(if (map? %) (handle-map %) %)) v)
+                       :else v)]))
+             entity-map))))
 
 #?(:clj
    (defn- get-component-eids [db eids query]
