@@ -237,9 +237,9 @@
     * :conforms? - booelan whether database conforms to schemas
     * :missing - vector of missing :db/ident values
     * :mismatch - vector of mismatched schema attributes for each datom. Each value is a tuple of [database-attr schema-attr]"
-     [conn schemas]
+     [db schemas]
      (let [txes (map #(dissoc % :db/id :db.install/_attribute) (schemas->tx schemas))
-           db-attrs (get-attributes (d/db conn) (map :db/ident txes))]
+           db-attrs (get-attributes db (map :db/ident txes))]
        (loop [txes txes missing [] mismatch []]
          (if-let [tx (first txes)]
            (let [[db-attr] (filter #(= (:db/ident %) (:db/ident tx)) db-attrs)]
@@ -377,3 +377,67 @@
 #?(:clj
    (defn pull-many-schema [db schema eids]
      (d/pull-many db (schema->pull-query schema) eids)))
+
+;;;;;;;;;;
+
+(defmulti ^:private handle-v class)
+(defmethod handle-v :default [_] '_)
+(defmethod handle-v schema.core.EqSchema [x] (:v x))
+(defmethod handle-v DatomicMeta [x] (handle-v (:t x)))
+
+(defn- kv->where [[k v]] ['?e k (handle-v v)])
+(defn- is-component? [[_ v]] (:db/isComponent (:attrs v)))
+
+(defn- build-component-query [[k _]]
+  [:find ['?component '...] :in '$ '?e :where ['?e (or (:k k) k) '?component]])
+
+(defn- build-query [schema]
+  (let [where-block (into [] (comp (filter (comp keyword? first))
+                                   (map kv->where))
+                          schema)
+        component-queries (into [] (comp (filter is-component?)
+                                         (map build-component-query))
+                                schema)]
+    (when-not (empty? where-block)
+      (with-meta (apply conj [:find ['?e '...] :in '$ :where] where-block)
+                 {:component-queries component-queries}))))
+
+(defmulti ^:private handle-schema? class)
+(defmethod handle-schema? :default [_] true)
+(defmethod handle-schema? schema.core.EnumSchema [_] false)
+
+(def ^:private filter-schemas-xf (filter handle-schema?))
+
+#?(:clj
+   (defn- expand-ident [db entity-map]
+     (into {} (map (fn [[k v]]
+                     (if (map? v)
+                       [k (:db/ident (d/pull db '[:db/ident] (:db/id v)))]
+                       [k v])))
+           entity-map)))
+
+#?(:clj
+   (defn- get-component-eids [db eids query]
+     (into [] (comp (map (partial d/q query db))
+                    (remove empty?))
+           eids)))
+
+#?(:clj
+   (defn- get-eids [db query]
+     (let [eids (d/q query db)
+           component-queries (:component-queries (meta query))]
+       (distinct (apply concat eids (mapcat (partial get-component-eids db eids) component-queries))))))
+
+#?(:clj
+   (defn dump-db [db schemas]
+
+     (assert (:conforms? (conforms? db schemas))
+             "Database does not conform to schemas!")
+
+     (into [] (comp filter-schemas-xf
+                    (keep build-query)
+                    (map (partial get-eids db))
+                    (mapcat (partial d/pull-many db '[*]))
+                    (map (partial expand-ident db))
+                    (distinct))
+           schemas)))
