@@ -431,7 +431,7 @@
 #?(:clj
    (defn dump-db [db schemas]
 
-     (assert (:conforms? (conforms? db schemas))
+     (assert (empty? (:missing (conforms? db schemas)))
              "Database does not conform to schemas!")
 
      (into [] (comp filter-schemas-xf
