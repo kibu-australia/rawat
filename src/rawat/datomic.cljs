@@ -10,17 +10,18 @@
   (rep [this v] #js [(.-part v) (.-idx v)])
   (stringRep [this v] nil))
 
+(def ^:private counter (atom 0))
+
 (defn tempid [part]
-  (DbId. part (* -1 (.now js/Date))))
+  (let [id (DbId. part (* -1000000 @counter))]
+    (swap! counter inc)
+    id)
 
 (defn tempid? [id]
-  (if id
-    (if (number? id)
-      (neg? id)
-      (if-let [idx (:idx id)]
-        (neg? idx)
-        false))
-    true))
+  (cond
+    (number? id)        (neg? id)
+    (instance? DbId id) (neg? (:idx id))
+    :else false))
 
 (defn- reader-str->dbid [s]
   (let [[part idx] (reader/read-string s)]
@@ -39,5 +40,5 @@
   (-pr-writer [d out opts]
     (-write out (dbid->reader-str d))))
 
-(def transit-writers {DbId (DbIdHandler.)})
-(def transit-readers {"db/id" (fn [[part idx]] (DbId. part idx))})
+(def transit-writer {DbId (DbIdHandler.)})
+(def transit-reader {"db/id" (fn [[part idx]] (DbId. part idx))})
