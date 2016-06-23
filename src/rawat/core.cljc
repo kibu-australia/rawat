@@ -57,6 +57,7 @@
        java.lang.Double {:db/valueType :db.type/double}
        java.math.BigInteger {:db/valueType :db.type/bigint}
        java.lang.Number {:db/valueType :db.type/long}
+       java.lang.Long {:db/valueType :db.type/long}
        clojure.lang.Keyword {:db/valueType :db.type/keyword}
        java.util.UUID {:db/valueType :db.type/uuid}
        java.net.URI {:db/valueType :db.type/uri}
