@@ -15,7 +15,7 @@
 (defn tempid [part]
   (let [id (DbId. part (* -1000000 @counter))]
     (swap! counter inc)
-    id)
+    id))
 
 (defn tempid? [id]
   (cond
