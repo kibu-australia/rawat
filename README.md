@@ -9,4 +9,3 @@
 
 Use your [Prismatic schemas](https://github.com/Prismatic/schema) as Datomic database schemas!
 
-rawat allows you to describe the shape of your Datomic entities within your application code
