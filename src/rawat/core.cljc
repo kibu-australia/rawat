@@ -217,8 +217,8 @@
                                   :db/isComponent
                                   :db/noHistory
                                   {:db/valueType [:db/ident]
-                                   :db/cardinality [:db/ident]
-                                   :db/doc [:db/ident]}])
+                                   :db/cardinality [:db/ident]}
+                                  :db/doc]])
                         ...]
                  :in $ [?ident ...]
                  :where [?e :db/ident ?ident]]
